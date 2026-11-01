@@ -1,0 +1,12 @@
+{
+  "projectId": "drug-lites-pharma",
+  "appId": "1:243382775580:web:0ee1dca830a04884c454d9",
+  "apiKey": "AIzaSyBTUn0BjcDzwQZ1RTc8tCKvUS9OoahruYI",
+  "authDomain": "drug-lites-pharma.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "drug-lites-pharma.firebasestorage.app",
+  "messagingSenderId": "243382775580",
+  "measurementId": "G-3NH3Z0T8HQ",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

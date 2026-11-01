@@ -1,0 +1,244 @@
+{
+  "entities": {
+    "Medicine": {
+      "title": "Medicine",
+      "description": "Pharmaceutical medicine formulary item with batches, pricing, and tax classification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "brandName": { "type": "string" },
+        "genericName": { "type": "string" },
+        "category": { "type": "string" },
+        "dosageForm": { "type": "string" },
+        "strength": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "gstRate": { "type": "number" },
+        "hsnCode": { "type": "string" },
+        "isScheduleDrug": { "type": "boolean" },
+        "scheduleClass": { "type": "string" },
+        "packSize": { "type": "number" },
+        "packUnit": { "type": "string" },
+        "allowLooseDispensing": { "type": "boolean" },
+        "storageCondition": { "type": "string" },
+        "reorderLevel": { "type": "number" },
+        "batches": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "brandName", "genericName", "category", "dosageForm", "gstRate", "batches"]
+    },
+    "SaleBill": {
+      "title": "SaleBill",
+      "description": "Point of sale bill transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "billNumber": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "cashierName": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "doctorRegNo": { "type": "string" },
+        "isPrescriptionVerified": { "type": "boolean" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "totalDiscount": { "type": "number" },
+        "taxableAmount": { "type": "number" },
+        "cgstAmount": { "type": "number" },
+        "sgstAmount": { "type": "number" },
+        "roundOff": { "type": "number" },
+        "netPayable": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "paymentRef": { "type": "string" },
+        "creditDueDays": { "type": "number" },
+        "daysTaken": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "billNumber", "timestamp", "items", "netPayable", "paymentMethod", "status"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Patient and customer profile for chronic care CRM and refills",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "medicalConditions": { "type": "string" },
+        "allergies": { "type": "string" },
+        "doctorPreferred": { "type": "string" },
+        "refillReminderDays": { "type": "number" },
+        "totalVisits": { "type": "number" },
+        "totalSpend": { "type": "number" },
+        "creditBalance": { "type": "number" },
+        "creditDueDays": { "type": "number" },
+        "lastVisit": { "type": "string" },
+        "lastReminderSent": { "type": "string" },
+        "activeCourseDays": { "type": "number" }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Pharmaceutical distributor and vendor details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmName": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "gstin": { "type": "string" },
+        "drugLicenseNo": { "type": "string" },
+        "creditDays": { "type": "number" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "totalPurchases": { "type": "number" },
+        "outstandingBalance": { "type": "number" }
+      },
+      "required": ["id", "firmName", "phone", "gstin"]
+    },
+    "PurchaseInward": {
+      "title": "PurchaseInward",
+      "description": "Inward wholesale purchase invoice received into inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "inwardNumber": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "supplierInvoiceNo": { "type": "string" },
+        "invoiceDate": { "type": "string" },
+        "receivedDate": { "type": "string" },
+        "billImageUrl": { "type": "string" },
+        "items": { "type": "array" },
+        "taxableTotal": { "type": "number" },
+        "gstTotal": { "type": "number" },
+        "netBillAmount": { "type": "number" },
+        "paymentStatus": { "type": "string" }
+      },
+      "required": ["id", "inwardNumber", "supplierName", "items", "netBillAmount"]
+    },
+    "StoreExpense": {
+      "title": "StoreExpense",
+      "description": "Operational expense voucher for pharmacy cash balance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMode": { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "description": { "type": "string" },
+        "receiptNumber": { "type": "string" }
+      },
+      "required": ["id", "date", "category", "amount", "paymentMode"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Pharmacy staff employee profile and credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "pharmacistRegNo": { "type": "string" },
+        "status": { "type": "string" },
+        "createdDate": { "type": "string" }
+      },
+      "required": ["id", "name", "username", "role", "status"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Pharmacy licensing Form 20B/21B and global configuration",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "addressLine1": { "type": "string" },
+        "addressLine2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "pincode": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "dl20b": { "type": "string" },
+        "dl21b": { "type": "string" },
+        "gstin": { "type": "string" },
+        "pan": { "type": "string" },
+        "upiId": { "type": "string" },
+        "soundboxName": { "type": "string" },
+        "nearExpiryDaysThreshold": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "googleDriveSyncEnabled": { "type": "boolean" },
+        "googleDriveAccount": { "type": "string" },
+        "googleDriveFolderId": { "type": "string" },
+        "googleDriveFolderName": { "type": "string" },
+        "googleDriveSyncFrequency": { "type": "string" },
+        "lastBackupTime": { "type": "string" }
+      },
+      "required": ["storeName", "dl20b", "dl21b", "gstin"]
+    },
+    "AuditLogEntry": {
+      "title": "AuditLogEntry",
+      "description": "Statutory audit trail log of cashier and pharmacy operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "ipAddress": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action", "details"]
+    }
+  },
+  "firestore": {
+    "/medicines/{medicineId}": {
+      "schema": "Medicine",
+      "description": "Formulary catalog of pharmaceutical drugs and stock batches"
+    },
+    "/bills/{billId}": {
+      "schema": "SaleBill",
+      "description": "Tax sale invoices and dispensed prescriptions"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Patient CRM database with refill interval timers"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Pharmaceutical vendors and distribution agencies"
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "PurchaseInward",
+      "description": "Stock purchase inward invoices and batch arrivals"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "StoreExpense",
+      "description": "Store operational expense registry"
+    },
+    "/staff/{staffId}": {
+      "schema": "StaffMember",
+      "description": "Pharmacy staff accounts and login profiles"
+    },
+    "/settings/{settingsId}": {
+      "schema": "StoreSettings",
+      "description": "Pharmacy store details, Form 20B/21B licenses, and thresholds"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Pharmacy compliance audit trail"
+    }
+  }
+}

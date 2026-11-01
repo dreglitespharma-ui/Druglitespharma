@@ -1,0 +1,229 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function accountPath() {
+      return /databases/$(database)/documents/staff_accounts/$(request.auth.uid);
+    }
+
+    function staffProfilePath() {
+      return /databases/$(database)/documents/staff/$(get(accountPath()).data.staffId);
+    }
+
+    function hasActiveStaffAccount() {
+      return signedIn()
+        && exists(accountPath())
+        && get(accountPath()).data.enabled == true
+        && exists(staffProfilePath())
+        && get(staffProfilePath()).data.status == 'Active'
+        && get(staffProfilePath()).data.role == get(accountPath()).data.role;
+    }
+
+    function isAdmin() {
+      return hasActiveStaffAccount()
+        && get(accountPath()).data.role == 'Admin';
+    }
+
+    function isInventoryStaff() {
+      return hasActiveStaffAccount()
+        && get(accountPath()).data.role in ['Admin', 'Pharmacist', 'Inventory Manager'];
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidRole(role) {
+      return role in ['Admin', 'Pharmacist', 'Cashier', 'Inventory Manager'];
+    }
+
+    match /staff_accounts/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['enabled', 'staffId', 'role'])
+        && request.resource.data.enabled is bool
+        && isValidId(request.resource.data.staffId)
+        && isValidRole(request.resource.data.role);
+      allow delete: if isAdmin();
+    }
+
+    match /account_requests/{uid} {
+      function isValidRequest() {
+        return request.resource.data.keys().hasOnly([
+            'uid', 'name', 'email', 'phone', 'status', 'requestedAt', 'reviewedAt'
+          ])
+          && request.resource.data.uid == uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 200
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.phone is string
+          && request.resource.data.phone.size() <= 50
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedAt is string
+          && (!('reviewedAt' in request.resource.data.keys())
+            || request.resource.data.reviewedAt is string);
+      }
+
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && isValidRequest()
+        && !request.resource.data.keys().hasAny(['reviewedAt']);
+      allow update: if (
+          isAdmin()
+          && resource.data.status == 'pending'
+          && request.resource.data.uid == uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedAt', 'staffId', 'role'])
+          && request.resource.data.reviewedAt is string
+          && (request.resource.data.status == 'rejected'
+            || (isValidRole(request.resource.data.role)
+              && isValidId(request.resource.data.staffId)))
+        ) || (
+          signedIn()
+          && request.auth.uid == uid
+          && resource.data.status in ['pending', 'rejected']
+          && isValidRequest()
+          && !request.resource.data.keys().hasAny(['reviewedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'phone', 'requestedAt', 'status', 'reviewedAt'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /medicines/{medicineId} {
+      allow read: if hasActiveStaffAccount();
+      allow create: if isInventoryStaff()
+        && isValidId(medicineId)
+        && request.resource.data.id == medicineId
+        && request.resource.data.brandName is string
+        && request.resource.data.brandName.size() <= 200
+        && request.resource.data.genericName is string
+        && request.resource.data.genericName.size() <= 200
+        && request.resource.data.category is string
+        && request.resource.data.dosageForm is string
+        && request.resource.data.batches is list;
+      allow update: if hasActiveStaffAccount()
+        && isValidId(medicineId)
+        && request.resource.data.id == medicineId
+        && request.resource.data.brandName is string
+        && request.resource.data.brandName.size() <= 200
+        && request.resource.data.genericName is string
+        && request.resource.data.genericName.size() <= 200
+        && request.resource.data.category is string
+        && request.resource.data.dosageForm is string
+        && request.resource.data.batches is list
+        && (isInventoryStaff()
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['batches']));
+      allow delete: if isInventoryStaff() && isValidId(medicineId);
+    }
+
+    match /bills/{billId} {
+      allow read: if hasActiveStaffAccount();
+      allow create: if hasActiveStaffAccount()
+        && isValidId(billId)
+        && request.resource.data.id == billId
+        && request.resource.data.billNumber is string
+        && request.resource.data.billNumber.size() <= 100
+        && request.resource.data.items is list
+        && request.resource.data.netPayable is number
+        && request.resource.data.status == 'Completed';
+      allow update: if isAdmin()
+        && isValidId(billId)
+        && request.resource.data.id == billId;
+      allow delete: if isAdmin() && isValidId(billId);
+    }
+
+    match /customers/{customerId} {
+      allow read: if hasActiveStaffAccount();
+      allow create, update: if hasActiveStaffAccount()
+        && isValidId(customerId)
+        && request.resource.data.id == customerId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() <= 50;
+      allow delete: if isAdmin() && isValidId(customerId);
+    }
+
+    match /suppliers/{supplierId} {
+      allow read: if hasActiveStaffAccount();
+      allow create, update: if hasActiveStaffAccount()
+        && isValidId(supplierId)
+        && request.resource.data.id == supplierId
+        && request.resource.data.firmName is string
+        && request.resource.data.firmName.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() <= 50;
+      allow delete: if isAdmin() && isValidId(supplierId);
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if hasActiveStaffAccount();
+      allow create, update: if isInventoryStaff()
+        && isValidId(purchaseId)
+        && request.resource.data.id == purchaseId
+        && request.resource.data.inwardNumber is string
+        && request.resource.data.inwardNumber.size() <= 100
+        && request.resource.data.items is list;
+      allow delete: if isAdmin() && isValidId(purchaseId);
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if hasActiveStaffAccount();
+      allow create, update: if isAdmin()
+        && isValidId(expenseId)
+        && request.resource.data.id == expenseId
+        && request.resource.data.amount is number
+        && request.resource.data.category is string;
+      allow delete: if isAdmin() && isValidId(expenseId);
+    }
+
+    match /staff/{staffId} {
+      allow get: if hasActiveStaffAccount()
+        && (isAdmin() || resource.data.id == get(accountPath()).data.staffId);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && isValidId(staffId)
+        && request.resource.data.id == staffId
+        && !request.resource.data.keys().hasAny(['password'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 100
+        && isValidRole(request.resource.data.role);
+      allow delete: if isAdmin() && isValidId(staffId);
+    }
+
+    match /settings/{settingsId} {
+      allow read: if hasActiveStaffAccount();
+      allow create, update: if isAdmin()
+        && isValidId(settingsId)
+        && request.resource.data.storeName is string
+        && request.resource.data.storeName.size() <= 200;
+      allow delete: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if hasActiveStaffAccount()
+        && isValidId(logId)
+        && request.resource.data.id == logId
+        && request.resource.data.action is string
+        && request.resource.data.details is string;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

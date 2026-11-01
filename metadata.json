@@ -1,0 +1,10 @@
+{
+  "name": "DRUGS LITES PHARMA",
+  "description": "Comprehensive Pharmacy & Medical Store POS, Inventory, Batch & Expiry Management System",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
