@@ -47,6 +47,14 @@ npm run build
 npm start
 ```
 
-Deploy to a Node.js host that runs the Express server and serves the built `dist` directory; configure the host's `PORT`, Firebase project, Firestore rules, and server-side Gemini key. A static-only deployment does not provide the authenticated AI API routes. Test authentication, rules, sales, restore, backups, and synchronization with the actual Firebase project before using real pharmacy or patient data.
+## Publish on Render
+
+1. In Render, choose **New → Blueprint**, connect `dreglitespharma-ui/Druglitespharma`, and deploy the `main` branch. Render reads [render.yaml](./render.yaml) to build the Vite app and run its Express server.
+2. After Render gives the service its `onrender.com` address, add that hostname under **Firebase Console → Authentication → Settings → Authorized domains**. Deploy and verify [firestore.rules](./firestore.rules), and configure the first Admin and active staff profile using the Firebase setup instructions above.
+3. To enable server-side invoice extraction and the AI assistant, add `GEMINI_API_KEY` in the Render service's private **Environment** settings, then redeploy. Do not put the key in this repository or browser code.
+
+The included Blueprint uses Render's free web-service plan, which may spin down after inactivity. A static-only deployment does not provide the authenticated AI API routes. Test authentication, rules, sales, restore, backups, and synchronization with the actual Firebase project before using real pharmacy or patient data.
+
+Deploy to another Node.js host by running the same build and start commands and configuring the host's `PORT`, Firebase project, Firestore rules, and optional server-side Gemini key.
 
 JSON backup downloads are manual exports to the current device. Google Drive backup is not implemented. This application does not itself verify pharmacy licences or regulatory compliance.
