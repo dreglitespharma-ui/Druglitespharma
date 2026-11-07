@@ -550,16 +550,31 @@ export class StorageService {
     this.addAuditLog('MEDICINE_CREATED', `Added new product ${newMed.brandName} (${newMed.strength}) with batch ${newMed.batches[0]?.batchNumber || 'N/A'}`);
   }
 
-  static updateMedicine(updatedMed: Medicine): void {
+  private static applyMedicineUpdate(updatedMed: Medicine): void {
     const medicines = [...this.getMedicines()];
     const idx = medicines.findIndex(m => m.id === updatedMed.id);
-    if (idx !== -1) {
-      medicines[idx] = updatedMed;
-      this.saveMedicines(medicines);
-      // Real-time Cloud Firestore Sync
-      FirestoreSyncService.saveMedicine(updatedMed).catch(console.error);
-      this.addAuditLog('MEDICINE_UPDATED', `Updated details for ${updatedMed.brandName}`);
+    if (idx === -1) {
+      return;
     }
+
+    medicines[idx] = updatedMed;
+    this.saveMedicines(medicines);
+    this.addAuditLog('MEDICINE_UPDATED', `Updated details for ${updatedMed.brandName}`);
+  }
+
+  static updateMedicine(updatedMed: Medicine): void {
+    if (!this.getMedicines().some(medicine => medicine.id === updatedMed.id)) return;
+    this.applyMedicineUpdate(updatedMed);
+    FirestoreSyncService.saveMedicine(updatedMed).catch(console.error);
+  }
+
+  static async updateMedicineAndSync(updatedMed: Medicine): Promise<void> {
+    if (!this.getMedicines().some(medicine => medicine.id === updatedMed.id)) {
+      throw new Error('This medicine is no longer available. Refresh the catalogue and try again.');
+    }
+
+    await FirestoreSyncService.saveMedicine(updatedMed);
+    this.applyMedicineUpdate(updatedMed);
   }
 
   static deleteMedicine(medicineId: string): void {
@@ -671,6 +686,13 @@ export class StorageService {
     }
 
     this.notifySubscribers();
+  }
+
+  static async deleteAllPurchasesAndSync(): Promise<number> {
+    const deletedCount = await FirestoreSyncService.deleteAllPurchases();
+    this.savePurchases([]);
+    this.addAuditLog('PURCHASE_INVOICES_DELETED', `Deleted ${deletedCount} purchase/inward invoice records`);
+    return deletedCount;
   }
 
   static addPurchaseInward(inward: PurchaseInward): void {

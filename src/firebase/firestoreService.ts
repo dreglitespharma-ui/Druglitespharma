@@ -588,7 +588,11 @@ export class FirestoreSyncService {
   static async saveMedicine(medicine: Medicine): Promise<void> {
     const docPath = `${FIRESTORE_COLLECTIONS.MEDICINES}/${medicine.id}`;
     try {
-      await setDoc(doc(db, FIRESTORE_COLLECTIONS.MEDICINES, medicine.id), medicine, { merge: true });
+      await setDoc(
+        doc(db, FIRESTORE_COLLECTIONS.MEDICINES, medicine.id),
+        omitUndefinedFirestoreFields(medicine),
+        { merge: true }
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
     }
@@ -609,7 +613,7 @@ export class FirestoreSyncService {
           med.id = `med-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
         }
         const ref = doc(db, FIRESTORE_COLLECTIONS.MEDICINES, med.id);
-        batch.set(ref, med, { merge: true });
+        batch.set(ref, omitUndefinedFirestoreFields(med), { merge: true });
       });
       try {
         await batch.commit();
@@ -741,6 +745,26 @@ export class FirestoreSyncService {
       await setDoc(doc(db, FIRESTORE_COLLECTIONS.PURCHASES, purchase.id), purchase, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
+    }
+  }
+
+  static async deleteAllPurchases(): Promise<number> {
+    const collectionPath = FIRESTORE_COLLECTIONS.PURCHASES;
+    try {
+      const snapshot = await getDocsFromServer(collection(db, collectionPath));
+      const documents = snapshot.docs;
+      const chunkSize = 400;
+
+      for (let i = 0; i < documents.length; i += chunkSize) {
+        const batch = writeBatch(db);
+        documents.slice(i, i + chunkSize).forEach(purchase => batch.delete(purchase.ref));
+        await batch.commit();
+      }
+
+      return documents.length;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, collectionPath);
+      throw error;
     }
   }
 

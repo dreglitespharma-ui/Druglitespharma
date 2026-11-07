@@ -14,7 +14,8 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Sparkles,
-  Bot
+  Bot,
+  Trash2
 } from 'lucide-react';
 import { Supplier, PurchaseInward, InwardItem, DosageForm, MedicineCategory, Medicine } from '../../types/pharmacy';
 import { sound } from '../../utils/sound';
@@ -26,6 +27,7 @@ interface PurchasesSuppliersViewProps {
   medicines?: Medicine[];
   onAddSupplier: (sup: Supplier) => void;
   onAddPurchaseInward: (inward: PurchaseInward) => void;
+  onDeleteAllPurchaseInvoices: () => Promise<void>;
   onOpenAIInvoiceScanner?: (initialImage?: string) => void;
 }
 
@@ -35,6 +37,7 @@ export const PurchasesSuppliersView: React.FC<PurchasesSuppliersViewProps> = ({
   medicines = [],
   onAddSupplier,
   onAddPurchaseInward,
+  onDeleteAllPurchaseInvoices,
   onOpenAIInvoiceScanner,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'inward' | 'suppliers'>('inward');
@@ -60,6 +63,25 @@ export const PurchasesSuppliersView: React.FC<PurchasesSuppliersViewProps> = ({
   const [billImageName, setBillImageName] = useState<string>('');
   const [previewLightbox, setPreviewLightbox] = useState<{ url: string; title: string } | null>(null);
   const [isSavingInward, setIsSavingInward] = useState<boolean>(false);
+  const [isDeletingInvoices, setIsDeletingInvoices] = useState<boolean>(false);
+
+  const handleDeleteAllPurchaseInvoices = async () => {
+    if (purchases.length === 0 || isDeletingInvoices) return;
+    const confirmed = window.confirm(
+      `Permanently delete all ${purchases.length} purchase/inward invoices? Supplier records, medicines, stock, and sales bills will not be changed.`
+    );
+    if (!confirmed) return;
+
+    setIsDeletingInvoices(true);
+    try {
+      await onDeleteAllPurchaseInvoices();
+    } catch (error) {
+      console.error('[PurchasesSuppliersView] Failed to delete purchase invoices:', error);
+      alert(error instanceof Error ? error.message : 'Could not delete the purchase invoices. Please try again.');
+    } finally {
+      setIsDeletingInvoices(false);
+    }
+  };
 
   const handleInvoiceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -338,6 +360,15 @@ export const PurchasesSuppliersView: React.FC<PurchasesSuppliersViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleDeleteAllPurchaseInvoices()}
+            disabled={purchases.length === 0 || isDeletingInvoices}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed text-red-700 text-xs font-semibold transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{isDeletingInvoices ? 'Deleting Invoices...' : 'Delete All Invoices'}</span>
+          </button>
           <button
             onClick={() => setIsAddSupplierOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-colors"

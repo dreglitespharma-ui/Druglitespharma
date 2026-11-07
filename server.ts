@@ -5,6 +5,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { createInvoiceGeminiError, INVOICE_GEMINI_MODELS } from './src/utils/geminiInvoiceModels';
+import {
+  buildOpenRouterInvoiceRequest,
+  DEFAULT_OPENROUTER_INVOICE_MODEL,
+  extractOpenRouterInvoiceText,
+} from './src/utils/openRouterInvoice';
 
 dotenv.config();
 
@@ -23,6 +29,8 @@ async function startServer() {
 
   // Initialize Gemini API client on the server side
   const apiKey = process.env.GEMINI_API_KEY;
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  const openRouterInvoiceModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_INVOICE_MODEL;
   let ai: GoogleGenAI | null = null;
   if (apiKey) {
     ai = new GoogleGenAI({
@@ -36,7 +44,7 @@ async function startServer() {
   }
 
   const aiRequestWindows = new Map<string, { count: number; expiresAt: number }>();
-  const invoiceParserVersion = '2026-11-01.2';
+  const invoiceParserVersion = '2026-11-05.3';
   const authenticateStaff: express.RequestHandler = async (_req, res, next) => {
     const token = _req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!token) {
@@ -164,16 +172,15 @@ async function startServer() {
     quotaExhaustedModels.set(model, Date.now() + retryDelayMs);
   }
 
-  // Keep the previously verified lightweight model first, with stable Flash fallbacks.
+  // Prefer the current multimodal Flash model; keep lightweight fallbacks for compatibility.
   async function callGemini(payload: any, timeoutMs = 35000): Promise<any> {
     if (!ai) throw new Error('Gemini API key not configured');
     
-    const allCandidates = ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-    const activeModels = allCandidates.filter(m => !isModelExhausted(m));
+    const activeModels = INVOICE_GEMINI_MODELS.filter(m => !isModelExhausted(m));
     if (activeModels.length === 0) {
       throw new Error('AI_QUOTA_COOLDOWN: All invoice-reading models are temporarily rate-limited. Wait about an hour, then retry.');
     }
-    let lastErr = null;
+    const errors: string[] = [];
 
     for (const model of activeModels) {
       try {
@@ -199,10 +206,10 @@ async function startServer() {
           response.usedModel = model;
           return response;
         }
-        lastErr = new Error(`EMPTY_MODEL_RESPONSE: ${model} returned no text.`);
+        errors.push(`EMPTY_MODEL_RESPONSE: ${model} returned no text.`);
       } catch (e: any) {
-        lastErr = e;
         const msg = e?.message || String(e);
+        errors.push(msg);
         const isQuota429 = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Quota exceeded');
         const isPermanentModelError = msg.includes('404') || msg.includes('NOT_FOUND');
         
@@ -215,17 +222,69 @@ async function startServer() {
         if (isPermanentModelError) markModelExhausted(model, 24 * 60 * 60 * 1000);
       }
     }
-    const finalMessage = lastErr instanceof Error ? lastErr.message : String(lastErr || '');
-    if (finalMessage.includes('429') || finalMessage.includes('RESOURCE_EXHAUSTED') || finalMessage.includes('Quota exceeded')) {
-      throw new Error('AI_QUOTA: Gemini quota is temporarily exhausted for all available invoice models.');
+    throw createInvoiceGeminiError(errors);
+  }
+
+  async function callOpenRouterInvoice(
+    images: Array<{ imageBase64: string; mimeType: string }>,
+    prompt: string,
+    timeoutMs = 90000
+  ): Promise<{ text: string; usedModel: string }> {
+    if (!openRouterApiKey) {
+      throw new Error('OPENROUTER_NOT_CONFIGURED: Set OPENROUTER_API_KEY on the server to enable invoice fallback.');
     }
-    if (finalMessage.startsWith('MODEL_TIMEOUT:')) {
-      throw new Error('AI_TIMEOUT: Invoice reading took too long. Try a clearer, smaller image or upload fewer pages at once.');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${openRouterApiKey}`,
+        },
+        body: JSON.stringify(buildOpenRouterInvoiceRequest(images, prompt, openRouterInvoiceModel)),
+        signal: controller.signal,
+      });
+      const body = await response.json().catch(() => null) as {
+        choices?: unknown;
+        model?: string;
+        error?: { message?: string; type?: string };
+      } | null;
+
+      if (!response.ok) {
+        const providerMessage = body?.error?.message || `OpenRouter returned HTTP ${response.status}`;
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('OPENROUTER_INVALID_KEY: OpenRouter rejected the API key. Verify OPENROUTER_API_KEY in the server environment.');
+        }
+        if (response.status === 402) {
+          throw new Error('OPENROUTER_CREDITS: OpenRouter account has insufficient credits.');
+        }
+        if (response.status === 429) {
+          throw new Error('OPENROUTER_QUOTA: OpenRouter rate or usage limit reached.');
+        }
+        if (response.status === 503 || response.status === 529) {
+          throw new Error('OPENROUTER_BUSY: OpenRouter or its model provider is temporarily overloaded.');
+        }
+        console.error('[Invoice OCR] OpenRouter request failed:', {
+          status: response.status,
+          type: body?.error?.type || 'unknown',
+          message: providerMessage.slice(0, 300),
+        });
+        throw new Error(`OPENROUTER_UNAVAILABLE: OpenRouter could not process this invoice (HTTP ${response.status}).`);
+      }
+
+      const text = extractOpenRouterInvoiceText(body);
+      if (!text) throw new Error('OPENROUTER_EMPTY_RESPONSE: OpenRouter returned no invoice text.');
+      return { text, usedModel: body?.model || openRouterInvoiceModel };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('OPENROUTER_TIMEOUT: OpenRouter invoice extraction timed out. Try fewer or smaller pages.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    if (finalMessage.includes('403') || finalMessage.includes('PERMISSION_DENIED')) {
-      throw new Error('AI_PERMISSION: The configured Gemini API key does not have access to an invoice-reading model.');
-    }
-    throw new Error(`AI_UNAVAILABLE: Invoice-reading models could not process this request. ${finalMessage.slice(0, 180)}`);
   }
 
   // Health check endpoint
@@ -233,6 +292,8 @@ async function startServer() {
     res.json({
       status: 'ok',
       hasApiKey: !!apiKey,
+      hasOpenRouterInvoiceFallback: !!openRouterApiKey,
+      openRouterInvoiceModel: openRouterInvoiceModel,
       invoiceParserVersion,
       timestamp: new Date().toISOString(),
     });
@@ -320,7 +381,7 @@ async function startServer() {
     return '';
   }
 
-  // Invoice parsing endpoint with multimodal Gemini
+  // Invoice parsing endpoint with Gemini primary and OpenRouter fallback
   app.post('/api/gemini/parse-invoice', authenticateStaff, limitAiRequests, async (req, res) => {
     try {
       const { imageBase64, mimeType = 'image/jpeg', existingCatalog = [] } = req.body;
@@ -353,9 +414,9 @@ async function startServer() {
         },
       }));
 
-      if (!ai) {
+      if (!ai && !openRouterApiKey) {
         return res.status(503).json({
-          error: 'Invoice extraction is unavailable until the server is configured with a Gemini API key. No invoice data was generated.',
+          error: 'Invoice extraction is unavailable. Configure GEMINI_API_KEY or OPENROUTER_API_KEY on the server. No invoice data was generated.',
         });
       }
 
@@ -461,34 +522,56 @@ OUTPUT SCHEMA (STRICT JSON):
 
 Extract every single line item visible on the invoice. Return ONLY the raw JSON object.`;
 
-      const response = await callGemini({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              ...imageParts,
+      let responseText: string;
+      let selectedModel: string;
+      let selectedProvider: 'gemini' | 'openrouter';
+      if (ai) {
+        try {
+          const response = await callGemini({
+            contents: [
               {
-                text: systemPrompt,
+                role: 'user',
+                parts: [
+                  ...imageParts,
+                  {
+                    text: systemPrompt,
+                  },
+                ],
               },
             ],
-          },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-        },
-      }, 45000);
+            config: {
+              responseMimeType: 'application/json',
+            },
+          }, 45000);
+          responseText = response.text || '{}';
+          selectedModel = response.usedModel || INVOICE_GEMINI_MODELS[0];
+          selectedProvider = 'gemini';
+        } catch (geminiError) {
+          if (!openRouterApiKey) throw geminiError;
+          const reason = geminiError instanceof Error ? geminiError.message : String(geminiError);
+          console.warn(`[Invoice OCR] Gemini failed; trying configured OpenRouter fallback: ${reason.slice(0, 180)}`);
+          const response = await callOpenRouterInvoice(submittedImages, systemPrompt);
+          responseText = response.text;
+          selectedModel = response.usedModel;
+          selectedProvider = 'openrouter';
+        }
+      } else {
+        const response = await callOpenRouterInvoice(submittedImages, systemPrompt);
+        responseText = response.text;
+        selectedModel = response.usedModel;
+        selectedProvider = 'openrouter';
+      }
 
-      const responseText = response.text || '{}';
       let parsedData: any = {};
       try {
         parsedData = JSON.parse(responseText);
       } catch (jsonErr) {
-        console.warn('JSON parsing attempt failed, extracting with regex...');
+        console.warn(`[Invoice OCR] ${selectedProvider} JSON parsing attempt failed, extracting with regex...`);
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedData = JSON.parse(jsonMatch[0]);
         } else {
-          throw new Error('Failed to parse structured response from Gemini model');
+          throw new Error(`Failed to parse structured response from ${selectedProvider} model`);
         }
       }
 
@@ -682,8 +765,9 @@ Extract every single line item visible on the invoice. Return ONLY the raw JSON 
 
       return res.status(200).json({
         success: true,
-        mode: 'gemini_multimodal',
-        aiEngine: response.usedModel || 'gemini-3.5-flash-lite',
+        mode: `${selectedProvider}_multimodal`,
+        aiProvider: selectedProvider,
+        aiEngine: selectedModel,
         supplier: {
           firmName: typeof parsedData.supplier?.firmName === 'string' ? parsedData.supplier.firmName : '',
           invoiceNo: typeof parsedData.supplier?.invoiceNo === 'string' ? parsedData.supplier.invoiceNo : '',
@@ -717,10 +801,52 @@ Extract every single line item visible on the invoice. Return ONLY the raw JSON 
           error: 'The configured Gemini API key cannot access an invoice-reading model. Check that key and its model access in Google AI Studio.',
         });
       }
+      if (message.startsWith('AI_BUSY:')) {
+        return res.status(503).json({
+          error: openRouterApiKey
+            ? `${message.replace(/^AI_BUSY:\s*/, '')} OpenRouter fallback is configured; check the server logs if it also failed.`
+            : 'Gemini is temporarily at capacity, and OpenRouter fallback is not enabled. Add OPENROUTER_API_KEY to the project .env file, then restart the app.',
+        });
+      }
       if (message.startsWith('AI_UNAVAILABLE:')) {
         console.error('[Invoice OCR] All configured Gemini models failed:', message.slice('AI_UNAVAILABLE:'.length).trim());
         return res.status(503).json({
-          error: 'Gemini could not process this invoice right now. Check the server connection and API quota, then retry with a clear JPG/PNG image or a smaller PDF.',
+          error: openRouterApiKey
+            ? 'The configured invoice AI providers could not process this invoice right now. Check their API status and quota, then retry.'
+            : 'Gemini could not process this invoice right now. Check the server connection and API quota, then retry with a clear JPG/PNG image or a smaller PDF.',
+        });
+      }
+      if (message.startsWith('OPENROUTER_QUOTA:')) {
+        return res.status(503).json({
+          error: 'OpenRouter has reached a request or usage limit. Check your OpenRouter account limits and credits.',
+        });
+      }
+      if (message.startsWith('OPENROUTER_CREDITS:')) {
+        return res.status(503).json({
+          error: 'OpenRouter account has insufficient credits. Add credits in OpenRouter, then retry.',
+        });
+      }
+      if (message.startsWith('OPENROUTER_BUSY:')) {
+        return res.status(503).json({
+          error: 'OpenRouter or its selected model provider is temporarily at capacity. Try again shortly.',
+        });
+      }
+      if (message.startsWith('OPENROUTER_INVALID_KEY:')) {
+        return res.status(503).json({
+          error: 'OpenRouter rejected the API key. Verify the complete OPENROUTER_API_KEY value in .env, then restart the app.',
+        });
+      }
+      if (message.startsWith('OPENROUTER_TIMEOUT:')) {
+        return res.status(504).json({
+          error: message.replace(/^OPENROUTER_TIMEOUT:\s*/, ''),
+        });
+      }
+      if (
+        message.startsWith('OPENROUTER_UNAVAILABLE:') ||
+        message.startsWith('OPENROUTER_EMPTY_RESPONSE:')
+      ) {
+        return res.status(503).json({
+          error: `OpenRouter could not process this invoice using ${openRouterInvoiceModel}. Verify the model ID and its image/PDF support in OpenRouter.`,
         });
       }
       if (message.includes('Failed to parse structured response') || message.includes('JSON')) {

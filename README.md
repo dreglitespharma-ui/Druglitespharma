@@ -31,9 +31,9 @@ Set `HOST=127.0.0.1` in `.env` and restart the server to disable LAN access. If 
 
 ## AI features
 
-The server-side invoice extraction and assistant require `GEMINI_API_KEY`. Set it in the server environment (for local development, create a private `.env` file based on `.env.example`). Keep it out of browser code and source control. AI requests require a valid Firebase staff session and are rate-limited. If authentication, network access, quota, or AI service setup fails, the app reports an error instead of inventing invoice or inventory data. Verify extracted invoice details against the source document before saving.
+The server-side assistant requires `GEMINI_API_KEY`. Invoice extraction uses Gemini first and can fall back to OpenRouter when `OPENROUTER_API_KEY` is configured. Set keys only in the server environment (for local development, create a private `.env` file based on `.env.example`); never put keys in browser code or source control. AI requests require a valid Firebase staff session and are rate-limited. Provider quotas and billing still apply; the fallback does not make AI usage unlimited. OpenRouter model availability, image/PDF support, and pricing depend on the selected model; PDF processing may incur additional provider charges. If authentication, network access, quota, or AI service setup fails, the app reports an error instead of inventing invoice or inventory data. Verify extracted invoice details against the source document before saving.
 
-AI requests send the entered message, optional invoice image, and relevant inventory context to the configured Gemini service. Do not send information unless your store has approved that processing.
+AI assistant requests send the entered message, optional image, and relevant inventory context to Gemini. Invoice pages are sent to Gemini and, only if Gemini fails, OpenRouter when its fallback key is configured. The fallback model defaults to `openai/gpt-4o-mini`; set `OPENROUTER_MODEL` in the server environment to use a different model supported by OpenRouter. Do not send information unless your store has approved that processing.
 
 New medicines created from purchase entries default to Schedule H until an authorized user verifies and updates their actual classification. Confirm product classification, batch, expiry, tax, and price details before dispensing or completing records.
 
@@ -51,10 +51,10 @@ npm start
 
 1. In Render, choose **New → Blueprint**, connect `dreglitespharma-ui/Druglitespharma`, and deploy the `main` branch. Render reads [render.yaml](./render.yaml) to build the Vite app and run its Express server.
 2. After Render gives the service its `onrender.com` address, add that hostname under **Firebase Console → Authentication → Settings → Authorized domains**. Deploy and verify [firestore.rules](./firestore.rules), and configure the first Admin and active staff profile using the Firebase setup instructions above.
-3. To enable server-side invoice extraction and the AI assistant, add `GEMINI_API_KEY` in the Render service's private **Environment** settings, then redeploy. Do not put the key in this repository or browser code.
+3. To enable the AI assistant, add `GEMINI_API_KEY` in the Render service's private **Environment** settings. To enable invoice parsing fallback, also add `OPENROUTER_API_KEY`; optionally configure `OPENROUTER_MODEL`. Redeploy after configuring either key. Do not put keys in this repository or browser code.
 
 The included Blueprint uses Render's free web-service plan, which may spin down after inactivity. A static-only deployment does not provide the authenticated AI API routes. Test authentication, rules, sales, restore, backups, and synchronization with the actual Firebase project before using real pharmacy or patient data.
 
-Deploy to another Node.js host by running the same build and start commands and configuring the host's `PORT`, Firebase project, Firestore rules, and optional server-side Gemini key.
+Deploy to another Node.js host by running the same build and start commands and configuring the host's `PORT`, Firebase project, Firestore rules, and server-side AI provider keys.
 
 JSON backup downloads are manual exports to the current device. Google Drive backup is not implemented. This application does not itself verify pharmacy licences or regulatory compliance.

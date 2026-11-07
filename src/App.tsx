@@ -271,8 +271,8 @@ export default function App() {
     setAuditLogs(StorageService.getAuditLogs());
   };
 
-  const handleUpdateMedicine = (updatedMed: Medicine) => {
-    StorageService.updateMedicine(updatedMed);
+  const handleUpdateMedicine = async (updatedMed: Medicine) => {
+    await StorageService.updateMedicineAndSync(updatedMed);
     setMedicines(StorageService.getMedicines());
     setAuditLogs(StorageService.getAuditLogs());
   };
@@ -295,6 +295,13 @@ export default function App() {
     setMedicines(StorageService.getMedicines());
     setSuppliers(StorageService.getSuppliers());
     setAuditLogs(StorageService.getAuditLogs());
+  };
+
+  const handleDeleteAllPurchaseInvoices = async () => {
+    const deletedCount = await StorageService.deleteAllPurchasesAndSync();
+    setPurchases(StorageService.getPurchases());
+    setAuditLogs(StorageService.getAuditLogs());
+    showShortcutToast(`Deleted ${deletedCount} purchase invoices`);
   };
 
   const handleAddCustomer = (cust: Customer) => {
@@ -583,6 +590,7 @@ export default function App() {
               medicines={medicines}
               onAddSupplier={handleAddSupplier}
               onAddPurchaseInward={handleAddPurchaseInward}
+              onDeleteAllPurchaseInvoices={handleDeleteAllPurchaseInvoices}
               onOpenAIInvoiceScanner={(initialImg) => {
                 setAiAssistantInitialInvoice(initialImg || null);
                 setIsAIAssistantOpen(true);

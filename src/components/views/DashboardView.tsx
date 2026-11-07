@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   IndianRupee, 
   TrendingUp, 
@@ -27,6 +27,14 @@ interface DashboardViewProps {
   onOpenPos: () => void;
 }
 
+const getLocalDateKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const getBillDateKey = (timestamp: string): string | null => {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : getLocalDateKey(date);
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   medicines,
   bills,
@@ -36,20 +44,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenPos,
 }) => {
   const [chartRange, setChartRange] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
+  const [todayDateKey, setTodayDateKey] = useState(() => getLocalDateKey(new Date()));
+
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timeout = window.setTimeout(
+      () => setTodayDateKey(getLocalDateKey(new Date())),
+      nextMidnight.getTime() - now.getTime() + 50
+    );
+    return () => window.clearTimeout(timeout);
+  }, [todayDateKey]);
 
   // Compute metrics
-  const totalSalesToday = bills.reduce((acc, b) => acc + b.netPayable, 0);
-  const totalBillsCount = bills.length;
+  const todayBills = bills.filter(b => b.status === 'Completed' && getBillDateKey(b.timestamp) === todayDateKey);
+  const totalSalesToday = todayBills.reduce((acc, b) => acc + b.netPayable, 0);
+  const totalBillsCount = todayBills.length;
 
   // Calculate gross profit
   let totalCostOfGoodsSold = 0;
-  bills.forEach(b => {
+  todayBills.forEach(b => {
     b.items.forEach(it => {
       totalCostOfGoodsSold += it.quantity * it.purchasePrice;
     });
   });
   const grossProfitToday = Math.max(0, totalSalesToday - totalCostOfGoodsSold);
-  const profitMarginPercent = totalSalesToday > 0 ? ((grossProfitToday / totalSalesToday) * 100).toFixed(1) : '31.4';
+  const profitMarginPercent = totalSalesToday > 0 ? ((grossProfitToday / totalSalesToday) * 100).toFixed(1) : '0.0';
 
   // Total inventory stock value
   let totalStockValue = 0;
@@ -84,13 +104,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
 
   // Cash vs UPI vs Card
-  const cashInCounter = bills
+  const cashInCounter = todayBills
     .filter(b => b.paymentMethod === 'Cash')
     .reduce((acc, b) => acc + b.netPayable, 0);
-  const upiDigital = bills
+  const upiDigital = todayBills
     .filter(b => b.paymentMethod === 'UPI / QR')
     .reduce((acc, b) => acc + b.netPayable, 0);
-  const cardPos = bills
+  const cardPos = todayBills
     .filter(b => b.paymentMethod === 'Card POS')
     .reduce((acc, b) => acc + b.netPayable, 0);
 

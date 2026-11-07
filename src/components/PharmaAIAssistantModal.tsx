@@ -396,7 +396,7 @@ export const PharmaAIAssistantModal: React.FC<PharmaAIAssistantModalProps> = ({
     setAutoFillSuccessResult(null);
     setInvoicePaymentStatus('');
     setInvoiceReviewed(false);
-    setParseStepMessage('Connecting to Gemini Flash...');
+    setParseStepMessage('Connecting to invoice AI (Gemini with OpenRouter fallback)...');
 
     const timer1 = setTimeout(() => {
       setParseStepMessage('Scanning distributor header & supplier details...');
