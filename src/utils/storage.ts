@@ -573,8 +573,13 @@ export class StorageService {
       throw new Error('This medicine is no longer available. Refresh the catalogue and try again.');
     }
 
-    await FirestoreSyncService.saveMedicine(updatedMed);
+    // Update local storage first so changes persist even if Firestore is unavailable
     this.applyMedicineUpdate(updatedMed);
+
+    // Then sync to cloud (non-blocking; errors are logged but don't block local save)
+    await FirestoreSyncService.saveMedicine(updatedMed).catch((err) => {
+      console.error('[StorageService] Firestore sync failed (local save succeeded):', err);
+    });
   }
 
   static deleteMedicine(medicineId: string): void {
